@@ -3,6 +3,7 @@ package dynalock
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
@@ -30,7 +31,7 @@ func isReady(ctx context.Context, c dktest.ContainerInfo) bool {
 
 	_, err := dbSvc.ListTablesWithContext(ctx, &dynamodb.ListTablesInput{})
 
-	return err != nil
+	return err == nil
 }
 
 func Test(t *testing.T) {
@@ -49,6 +50,7 @@ func Test(t *testing.T) {
 
 			testPutGetDeleteExists(t, dl)
 			testLockUnlock(t, dl)
+			testList(t, dl)
 
 		})
 }
@@ -124,7 +126,7 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 	assert := require.New(t)
 
 	// Get a not exist key should return ErrKeyNotFound
-	_, err := kv.Get("testPutGetDelete_not_exist_key", ReadOptions{})
+	_, err := kv.Get("testPutGetDelete_not_exist_key", &ReadOptions{})
 	assert.Equal(ErrKeyNotFound, err)
 
 	value := []byte("bar")
@@ -136,18 +138,18 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 	} {
 
 		// Put the key
-		err = kv.Put(key, value, WriteOptions{TTL: 2 * time.Second})
+		err = kv.Put(key, value, &WriteOptions{TTL: 2 * time.Second})
 		assert.NoError(err)
 
 		// Get should return the value and an incremented index
-		pair, err := kv.Get(key, ReadOptions{})
+		pair, err := kv.Get(key, nil)
 		assert.NoError(err)
 		assert.NotNil(pair)
 		assert.Equal(pair.Value, value)
 		assert.NotEqual(pair.Version, 0)
 
 		// Exists should return true
-		exists, err := kv.Exists(key, ReadOptions{})
+		exists, err := kv.Exists(key, nil)
 		assert.NoError(err)
 		assert.True(exists)
 
@@ -156,13 +158,13 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 		assert.NoError(err)
 
 		// Get should fail
-		pair, err = kv.Get(key, ReadOptions{})
+		pair, err = kv.Get(key, nil)
 		assert.Error(err)
 		assert.Nil(pair)
 		assert.Nil(pair)
 
 		// Exists should return false
-		exists, err = kv.Exists(key, ReadOptions{})
+		exists, err = kv.Exists(key, nil)
 		assert.NoError(err)
 		assert.False(exists)
 	}
@@ -176,7 +178,7 @@ func testLockUnlock(t *testing.T, kv Store) {
 	value := []byte("bar")
 
 	// We should be able to create a new lock on key
-	lock, err := kv.NewLock(key, LockOptions{Value: value, TTL: 2 * time.Second})
+	lock, err := kv.NewLock(key, &LockOptions{Value: value, TTL: 2 * time.Second})
 	assert.NoError(err)
 	assert.NotNil(lock)
 
@@ -186,7 +188,7 @@ func testLockUnlock(t *testing.T, kv Store) {
 	assert.NotNil(lockChan)
 
 	// Get should work
-	pair, err := kv.Get(key, ReadOptions{})
+	pair, err := kv.Get(key, nil)
 	assert.NoError(err)
 	assert.Equal(pair.Value, value)
 	assert.NotEqual(pair.Version, 0)
@@ -201,11 +203,41 @@ func testLockUnlock(t *testing.T, kv Store) {
 	assert.NotNil(lockChan)
 
 	// Get should work
-	pair, err = kv.Get(key, ReadOptions{})
+	pair, err = kv.Get(key, nil)
 	assert.NoError(err)
 	assert.Equal(pair.Value, value)
 	assert.NotEqual(pair.Version, 0)
 
 	err = lock.Unlock()
 	assert.NoError(err)
+}
+
+func testList(t *testing.T, kv Store) {
+
+	assert := require.New(t)
+
+	childKey := "testList/child"
+	subfolderKey := "testList/subfolder"
+
+	// Put the first child key
+	err := kv.Put(childKey, []byte("first"), nil)
+	assert.NoError(err)
+
+	// Put the second child key which is also a directory
+	err = kv.Put(subfolderKey, []byte("second"), nil)
+	assert.NoError(err)
+
+	// Put child keys under secondKey
+	for i := 1; i <= 3; i++ {
+		key := "testList/subfolder/key" + strconv.Itoa(i)
+		err := kv.Put(key, []byte("value"), nil)
+		assert.NoError(err)
+	}
+
+	// List should work and return five child entries
+	pairs, err := kv.List("testList/subfolder/key", nil)
+	assert.NoError(err)
+	assert.NotNil(pairs)
+	assert.Equal(3, len(pairs))
+
 }

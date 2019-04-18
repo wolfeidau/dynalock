@@ -61,7 +61,7 @@ func (l *dynamodbLock) tryLock(lockHeld chan struct{}, stopChan chan struct{}) (
 		l.key,
 		l.value,
 		l.last,
-		WriteOptions{
+		&WriteOptions{
 			TTL: l.ttl,
 		})
 	if err != nil {
@@ -88,7 +88,7 @@ func (l *dynamodbLock) holdLock(lockHeld, stopChan chan struct{}) {
 			l.key,
 			l.value,
 			l.last,
-			WriteOptions{
+			&WriteOptions{
 				TTL: l.ttl,
 			})
 		if err == nil {

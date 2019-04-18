@@ -17,5 +17,5 @@ deps: ##=> Intall all the dependencies to build
 
 test: ##=> Run the tests
 	$(info [+] Run tests...")
-	go test -v -cover ./...
+	@go test -v -cover ./...
 .PHONY: test
