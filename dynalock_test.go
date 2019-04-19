@@ -46,7 +46,7 @@ func Test(t *testing.T) {
 			err := ensureVersionTable(dbSvc, "testing-locks")
 			assert.NoError(err)
 
-			dl := &Dynalock{dynamoSvc: dbSvc, tableName: "testing-locks"}
+			dl := &Dynalock{dynamoSvc: dbSvc, tableName: "testing-locks", partition: "agent"}
 
 			testPutGetDeleteExists(t, dl)
 			testLockUnlock(t, dl)
@@ -75,12 +75,14 @@ func ensureVersionTable(dbSvc dynamodbiface.DynamoDBAPI, tableName string) error
 
 	_, err := dbSvc.CreateTable(&dynamodb.CreateTableInput{
 		TableName: aws.String(tableName),
-		KeySchema: []*dynamodb.KeySchemaElement{{
-			AttributeName: aws.String("id"), KeyType: aws.String(dynamodb.KeyTypeHash),
-		}},
-		AttributeDefinitions: []*dynamodb.AttributeDefinition{{
-			AttributeName: aws.String("id"), AttributeType: aws.String(dynamodb.ScalarAttributeTypeS),
-		}},
+		KeySchema: []*dynamodb.KeySchemaElement{
+			{AttributeName: aws.String("id"), KeyType: aws.String(dynamodb.KeyTypeHash)},
+			{AttributeName: aws.String("name"), KeyType: aws.String(dynamodb.KeyTypeRange)},
+		},
+		AttributeDefinitions: []*dynamodb.AttributeDefinition{
+			{AttributeName: aws.String("id"), AttributeType: aws.String(dynamodb.ScalarAttributeTypeS)},
+			{AttributeName: aws.String("name"), AttributeType: aws.String(dynamodb.ScalarAttributeTypeS)},
+		},
 		ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
 			ReadCapacityUnits:  aws.Int64(1),
 			WriteCapacityUnits: aws.Int64(1),
@@ -126,7 +128,7 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 	assert := require.New(t)
 
 	// Get a not exist key should return ErrKeyNotFound
-	_, err := kv.Get("testPutGetDelete_not_exist_key", &ReadOptions{})
+	_, err := kv.Get("testPutGetDelete_not_exist_key", nil)
 	assert.Equal(ErrKeyNotFound, err)
 
 	value := []byte("bar")

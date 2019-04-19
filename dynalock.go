@@ -40,7 +40,7 @@ type Store interface {
 	Get(key string, options *ReadOptions) (*KVPair, error)
 
 	// List the content of a given prefix
-	List(directory string, options *ReadOptions) ([]*KVPair, error)
+	List(prefix string, options *ReadOptions) ([]*KVPair, error)
 
 	// Delete the value at the specified key
 	Delete(key string) error
@@ -72,20 +72,23 @@ type Locker interface {
 type Dynalock struct {
 	dynamoSvc dynamodbiface.DynamoDBAPI
 	tableName string
+	partition string
 }
 
 // KVPair represents {Key, Value, Lastindex} tuple
 type KVPair struct {
-	Key     string `dynamodbav:"id"`
-	Value   []byte `dynamodbav:"payload"`
-	Version int64  `dynamodbav:"version"`
+	Partition string `dynamodbav:"id"`
+	Key       string `dynamodbav:"name"`
+	Value     []byte `dynamodbav:"payload"`
+	Version   int64  `dynamodbav:"version"`
 }
 
 // New construct a DynamoDB backed locking store
-func New(dynamoSvc dynamodbiface.DynamoDBAPI, tableName string) Store {
+func New(dynamoSvc dynamodbiface.DynamoDBAPI, tableName, partition string) Store {
 	return &Dynalock{
 		dynamoSvc: dynamoSvc,
 		tableName: tableName,
+		partition: partition,
 	}
 }
 
@@ -118,12 +121,8 @@ func (ddb *Dynalock) Exists(key string, options *ReadOptions) (bool, error) {
 	}
 
 	res, err := ddb.dynamoSvc.GetItem(&dynamodb.GetItemInput{
-		TableName: aws.String(ddb.tableName),
-		Key: map[string]*dynamodb.AttributeValue{
-			"id": {
-				S: aws.String(key),
-			},
-		},
+		TableName:      aws.String(ddb.tableName),
+		Key:            buildKeys(ddb.partition, key),
 		ConsistentRead: aws.Bool(options.Consistent),
 	})
 
@@ -177,11 +176,7 @@ func (ddb *Dynalock) Get(key string, options *ReadOptions) (*KVPair, error) {
 func (ddb *Dynalock) Delete(key string) error {
 	_, err := ddb.dynamoSvc.DeleteItem(&dynamodb.DeleteItemInput{
 		TableName: aws.String(ddb.tableName),
-		Key: map[string]*dynamodb.AttributeValue{
-			"id": {
-				S: aws.String(key),
-			},
-		},
+		Key:       buildKeys(ddb.partition, key),
 	})
 	if err != nil {
 		return err
@@ -198,19 +193,26 @@ func (ddb *Dynalock) List(prefix string, options *ReadOptions) ([]*KVPair, error
 		}
 	}
 
-	si := &dynamodb.ScanInput{
-		TableName:                 aws.String(ddb.tableName),
-		FilterExpression:          aws.String("begins_with(id, :namePrefix)"),
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{":namePrefix": {S: aws.String(prefix)}},
-		ConsistentRead:            aws.Bool(options.Consistent),
+	si := &dynamodb.QueryInput{
+		TableName:              aws.String(ddb.tableName),
+		KeyConditionExpression: aws.String("#id = :partition AND begins_with(#name, :namePrefix)"),
+		ExpressionAttributeNames: map[string]*string{
+			"#id":   aws.String("id"),
+			"#name": aws.String("name"),
+		},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":partition":  {S: aws.String(ddb.partition)},
+			":namePrefix": {S: aws.String(prefix)},
+		},
+		ConsistentRead: aws.Bool(options.Consistent),
 	}
 
 	ctcx, cancel := context.WithTimeout(context.Background(), listDefaultTimeout)
 
 	items := []map[string]*dynamodb.AttributeValue{}
 
-	err := ddb.dynamoSvc.ScanPagesWithContext(ctcx, si,
-		func(page *dynamodb.ScanOutput, lastPage bool) bool {
+	err := ddb.dynamoSvc.QueryPagesWithContext(ctcx, si,
+		func(page *dynamodb.QueryOutput, lastPage bool) bool {
 			items = append(items, page.Items...)
 
 			if lastPage {
@@ -314,12 +316,8 @@ func (ddb *Dynalock) AtomicDelete(key string, previous *KVPair) (bool, error) {
 	}
 
 	req := &dynamodb.DeleteItemInput{
-		TableName: aws.String(ddb.tableName),
-		Key: map[string]*dynamodb.AttributeValue{
-			"id": {
-				S: aws.String(key),
-			},
-		},
+		TableName:                 aws.String(ddb.tableName),
+		Key:                       buildKeys(ddb.partition, key),
 		ConditionExpression:       aws.String("version = :lastRevision"),
 		ExpressionAttributeValues: expAttr,
 	}
@@ -341,17 +339,13 @@ func (ddb *Dynalock) getKey(key string, options *ReadOptions) (*dynamodb.GetItem
 		TableName:      aws.String(ddb.tableName),
 		ConsistentRead: aws.Bool(options.Consistent),
 		Key: map[string]*dynamodb.AttributeValue{
-			"id": {
-				S: aws.String(key),
-			},
+			"id":   {S: aws.String(ddb.partition)},
+			"name": {S: aws.String(key)},
 		},
 	})
 }
 
 func (ddb *Dynalock) buildUpdateItemInput(key string, payload []byte, options *WriteOptions) *dynamodb.UpdateItemInput {
-	keys := map[string]*dynamodb.AttributeValue{
-		"id": {S: aws.String(key)},
-	}
 
 	encodedValue := base64.StdEncoding.EncodeToString(payload)
 	ttlVal := time.Now().Add(options.TTL).Unix()
@@ -366,7 +360,7 @@ func (ddb *Dynalock) buildUpdateItemInput(key string, payload []byte, options *W
 
 	return &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(ddb.tableName),
-		Key:                       keys,
+		Key:                       buildKeys(ddb.partition, key),
 		ExpressionAttributeValues: expressions,
 		UpdateExpression:          updateExpression,
 		ReturnValues:              aws.String(dynamodb.ReturnValueAllNew),
@@ -409,6 +403,13 @@ func (ddb *Dynalock) NewLock(key string, options *LockOptions) (Locker, error) {
 	}, nil
 }
 
+func buildKeys(partition, key string) map[string]*dynamodb.AttributeValue {
+	return map[string]*dynamodb.AttributeValue{
+		"id":   {S: aws.String(partition)},
+		"name": {S: aws.String(key)},
+	}
+}
+
 func updateWithConditions(item *dynamodb.UpdateItemInput, previous *KVPair) error {
 
 	if previous != nil {
@@ -447,8 +448,7 @@ func isItemExpired(item map[string]*dynamodb.AttributeValue) bool {
 
 // WriteOptions contains optional request parameters
 type WriteOptions struct {
-	TTL   time.Duration
-	IsDir bool
+	TTL time.Duration
 }
 
 // ReadOptions contains optional request parameters
