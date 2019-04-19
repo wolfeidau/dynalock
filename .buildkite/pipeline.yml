@@ -1,0 +1,10 @@
+steps:
+  - name: ":golang:"
+    command: "make ci"
+    env:
+      CB_IMAGE_OVERRIDE: "wolfeidau/buildkite-golang:1.12"
+      CB_COMPUTE_TYPE_OVERRIDE: "BUILD_GENERAL1_SMALL"
+      GO111MODULE: "on"
+    agents:
+      queue: dev
+      serverless: true
