@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'lambda: Serverless endpoint for Raven, a @wolfeidau template'
+
+Resources:
+
+  DynalockTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+        - AttributeName: name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+        - AttributeName: name
+          KeyType: RANGE
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: expires
+        Enabled: true
+
+Outputs:
+  DynalockTable:
+    Value: !Ref DynalockTable
+    Export:
+      Name: !Sub "${AWS::StackName}-DynalockTable"
