@@ -51,7 +51,8 @@ func Test(t *testing.T) {
 			testPutGetDeleteExists(t, dl)
 			testLockUnlock(t, dl)
 			testList(t, dl)
-
+			testAtomicPut(t, dl)
+			testAtomicDelete(t, dl)
 		})
 }
 
@@ -242,4 +243,77 @@ func testList(t *testing.T, kv Store) {
 	assert.NotNil(pairs)
 	assert.Equal(3, len(pairs))
 
+}
+
+func testAtomicPut(t *testing.T, kv Store) {
+
+	assert := require.New(t)
+
+	key := "testAtomicPut"
+	value := []byte("world")
+
+	// Put the key
+	err := kv.Put(key, value, nil)
+	assert.NoError(err)
+
+	// Get should return the value and an incremented index
+	pair, err := kv.Get(key, nil)
+	assert.NoError(err)
+	assert.NotNil(pair)
+	assert.Equal(pair.Value, value)
+	assert.NotEqual(pair.Version, 0)
+
+	// This CAS should fail: previous exists.
+	success, _, err := kv.AtomicPut(key, []byte("WORLD"), nil, nil)
+	assert.Error(err)
+	assert.False(success)
+
+	// This CAS should succeed
+	success, _, err = kv.AtomicPut(key, []byte("WORLD"), pair, nil)
+	assert.NoError(err)
+	assert.True(success)
+
+	// This CAS should fail, key has wrong index.
+	pair.Version = 6744
+	success, _, err = kv.AtomicPut(key, []byte("WORLDWORLD"), pair, nil)
+	assert.Equal(err, ErrKeyModified)
+	assert.False(success)
+}
+
+func testAtomicDelete(t *testing.T, kv Store) {
+
+	assert := require.New(t)
+
+	key := "testAtomicDelete"
+	value := []byte("world")
+
+	// Put the key
+	err := kv.Put(key, value, nil)
+	assert.NoError(err)
+
+	// Get should return the value and an incremented index
+	pair, err := kv.Get(key, nil)
+	assert.NoError(err)
+	assert.NotNil(pair)
+	assert.Equal(pair.Value, value)
+	assert.NotEqual(pair.Version, 0)
+
+	tempIndex := pair.Version
+
+	// AtomicDelete should fail
+	pair.Version = 6744
+	success, err := kv.AtomicDelete(key, pair)
+	assert.Error(err)
+	assert.False(success)
+
+	// AtomicDelete should succeed
+	pair.Version = tempIndex
+	success, err = kv.AtomicDelete(key, pair)
+	assert.NoError(err)
+	assert.True(success)
+
+	// Delete a non-existent key; should fail
+	success, err = kv.AtomicDelete(key, pair)
+	assert.Equal(ErrKeyNotFound, err)
+	assert.False(success)
 }
