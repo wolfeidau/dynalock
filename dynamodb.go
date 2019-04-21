@@ -2,7 +2,6 @@ package dynalock
 
 import (
 	"context"
-	"encoding/base64"
 	"strconv"
 	"time"
 
@@ -24,8 +23,26 @@ type Dynalock struct {
 type KVPair struct {
 	Partition string `dynamodbav:"id"`
 	Key       string `dynamodbav:"name"`
-	Value     []byte `dynamodbav:"payload"`
 	Version   int64  `dynamodbav:"version"`
+	// handled separately to enable an number of stored values
+	value *dynamodb.AttributeValue
+}
+
+// BytesValue use the attribute to return a slice of bytes, a nil will be returned if it is empty or nil
+func (kv *KVPair) BytesValue() []byte {
+	buf := []byte{}
+
+	err := dynamodbattribute.Unmarshal(kv.value, &buf)
+	if err != nil {
+		return nil
+	}
+
+	return buf
+}
+
+// AttributeValue return the current dynamodb attribute value, may be nil
+func (kv *KVPair) AttributeValue() *dynamodb.AttributeValue {
+	return kv.value
 }
 
 // New construct a DynamoDB backed locking store
@@ -38,15 +55,9 @@ func New(dynamoSvc dynamodbiface.DynamoDBAPI, tableName, partition string) Store
 }
 
 // Put a value at the specified key
-func (ddb *Dynalock) Put(key string, payload []byte, options *WriteOptions) error {
+func (ddb *Dynalock) Put(key string, options ...WriteOption) error {
 
-	if options == nil {
-		options = &WriteOptions{
-			TTL: defaultLockTTL,
-		}
-	}
-
-	params := ddb.buildUpdateItemInput(key, payload, options)
+	params := ddb.buildUpdateItemInput(key, NewWriteOptions(options...))
 
 	_, err := ddb.dynamoSvc.UpdateItem(params)
 	if err != nil {
@@ -57,18 +68,14 @@ func (ddb *Dynalock) Put(key string, payload []byte, options *WriteOptions) erro
 }
 
 // Exists if a Key exists in the store
-func (ddb *Dynalock) Exists(key string, options *ReadOptions) (bool, error) {
+func (ddb *Dynalock) Exists(key string, options ...ReadOption) (bool, error) {
 
-	if options == nil {
-		options = &ReadOptions{
-			Consistent: true, // default to enabling read consistency
-		}
-	}
+	readOptions := NewReadOptions(options...)
 
 	res, err := ddb.dynamoSvc.GetItem(&dynamodb.GetItemInput{
 		TableName:      aws.String(ddb.tableName),
 		Key:            buildKeys(ddb.partition, key),
-		ConsistentRead: aws.Bool(options.Consistent),
+		ConsistentRead: aws.Bool(readOptions.consistent),
 	})
 
 	if err != nil {
@@ -88,15 +95,11 @@ func (ddb *Dynalock) Exists(key string, options *ReadOptions) (bool, error) {
 }
 
 // Get a value given its key
-func (ddb *Dynalock) Get(key string, options *ReadOptions) (*KVPair, error) {
+func (ddb *Dynalock) Get(key string, options ...ReadOption) (*KVPair, error) {
 
-	if options == nil {
-		options = &ReadOptions{
-			Consistent: true, // default to enabling read consistency
-		}
-	}
+	readOptions := NewReadOptions(options...)
 
-	res, err := ddb.getKey(key, options)
+	res, err := ddb.getKey(key, readOptions)
 	if err != nil {
 		return nil, err
 	}
@@ -131,13 +134,9 @@ func (ddb *Dynalock) Delete(key string) error {
 }
 
 // List the content of a given prefix
-func (ddb *Dynalock) List(prefix string, options *ReadOptions) ([]*KVPair, error) {
+func (ddb *Dynalock) List(prefix string, options ...ReadOption) ([]*KVPair, error) {
 
-	if options == nil {
-		options = &ReadOptions{
-			Consistent: true, // default to enabling read consistency
-		}
-	}
+	readOptions := NewReadOptions(options...)
 
 	si := &dynamodb.QueryInput{
 		TableName:              aws.String(ddb.tableName),
@@ -150,7 +149,7 @@ func (ddb *Dynalock) List(prefix string, options *ReadOptions) ([]*KVPair, error
 			":partition":  {S: aws.String(ddb.partition)},
 			":namePrefix": {S: aws.String(prefix)},
 		},
-		ConsistentRead: aws.Bool(options.Consistent),
+		ConsistentRead: aws.Bool(readOptions.consistent),
 	}
 
 	ctcx, cancel := context.WithTimeout(context.Background(), listDefaultTimeout)
@@ -196,30 +195,24 @@ func (ddb *Dynalock) List(prefix string, options *ReadOptions) ([]*KVPair, error
 }
 
 // AtomicPut Atomic CAS operation on a single value.
-func (ddb *Dynalock) AtomicPut(key string, payload []byte, previous *KVPair, options *WriteOptions) (bool, *KVPair, error) {
+func (ddb *Dynalock) AtomicPut(key string, options ...WriteOption) (bool, *KVPair, error) {
 
-	if options == nil {
-		options = &WriteOptions{
-			TTL: defaultLockTTL,
-		}
-	}
+	writeOptions := NewWriteOptions(options...)
 
-	getRes, err := ddb.getKey(key, &ReadOptions{
-		Consistent: true, // enable the read consistent flag
-	})
+	getRes, err := ddb.getKey(key, NewReadOptions())
 	if err != nil {
 		return false, nil, err
 	}
 
 	// AtomicPut is equivalent to Put if previous is nil and the Key
 	// exist in the DB or is not expired.
-	if previous == nil && getRes.Item != nil && !isItemExpired(getRes.Item) {
+	if writeOptions.previous == nil && getRes.Item != nil && !isItemExpired(getRes.Item) {
 		return false, nil, ErrKeyExists
 	}
 
-	params := ddb.buildUpdateItemInput(key, payload, options)
+	params := ddb.buildUpdateItemInput(key, writeOptions)
 
-	err = updateWithConditions(params, previous)
+	err = updateWithConditions(params, writeOptions.previous)
 	if err != nil {
 		return false, nil, err
 	}
@@ -244,11 +237,15 @@ func (ddb *Dynalock) AtomicPut(key string, payload []byte, previous *KVPair, opt
 }
 
 // AtomicDelete delete of a single value
+//
+// This supports two different operations:
+// * if previous is supplied assert it exists with the version supplied
+// * if previous is nil then assert that the key doesn't exist
+//
+// FIXME: should the second case just return false, nil?
 func (ddb *Dynalock) AtomicDelete(key string, previous *KVPair) (bool, error) {
 
-	getRes, err := ddb.getKey(key, &ReadOptions{
-		Consistent: true, // enable the read consistent flag
-	})
+	getRes, err := ddb.getKey(key, NewReadOptions())
 	if err != nil {
 		return false, err
 	}
@@ -283,7 +280,7 @@ func (ddb *Dynalock) AtomicDelete(key string, previous *KVPair) (bool, error) {
 func (ddb *Dynalock) getKey(key string, options *ReadOptions) (*dynamodb.GetItemOutput, error) {
 	return ddb.dynamoSvc.GetItem(&dynamodb.GetItemInput{
 		TableName:      aws.String(ddb.tableName),
-		ConsistentRead: aws.Bool(options.Consistent),
+		ConsistentRead: aws.Bool(options.consistent),
 		Key: map[string]*dynamodb.AttributeValue{
 			"id":   {S: aws.String(ddb.partition)},
 			"name": {S: aws.String(key)},
@@ -291,13 +288,13 @@ func (ddb *Dynalock) getKey(key string, options *ReadOptions) (*dynamodb.GetItem
 	})
 }
 
-func (ddb *Dynalock) buildUpdateItemInput(key string, payload []byte, options *WriteOptions) *dynamodb.UpdateItemInput {
+func (ddb *Dynalock) buildUpdateItemInput(key string, options *WriteOptions) *dynamodb.UpdateItemInput {
 
-	ttlVal := time.Now().Add(options.TTL).Unix()
+	ttlVal := time.Now().Add(options.ttl).Unix()
 
 	expressions := map[string]*dynamodb.AttributeValue{
 		":inc":     {N: aws.String("1")},
-		":payload": encodePayload(payload),
+		":payload": options.value,
 		":ttl":     {N: aws.String(strconv.FormatInt(ttlVal, 10))},
 	}
 
@@ -314,27 +311,23 @@ func (ddb *Dynalock) buildUpdateItemInput(key string, payload []byte, options *W
 }
 
 // NewLock has to implemented at the library level since its not supported by DynamoDB
-func (ddb *Dynalock) NewLock(key string, options *LockOptions) (Locker, error) {
+func (ddb *Dynalock) NewLock(key string, options ...LockOption) (Locker, error) {
 	var (
-		value   []byte
-		ttl     = defaultLockTTL
+		value   *dynamodb.AttributeValue
+		ttl     = DefaultLockTTL
 		renewCh = make(chan struct{})
 	)
 
-	if options == nil {
-		options = &LockOptions{
-			TTL: defaultLockTTL,
-		}
-	}
+	lockOptions := NewLockOptions(options...)
 
-	if options.TTL != 0 {
-		ttl = options.TTL
+	if lockOptions.ttl != 0 {
+		ttl = lockOptions.ttl
 	}
-	if len(options.Value) != 0 {
-		value = options.Value
+	if lockOptions.value != nil {
+		value = lockOptions.value
 	}
-	if options.RenewLock != nil {
-		renewCh = options.RenewLock
+	if lockOptions.renewLock != nil {
+		renewCh = lockOptions.renewLock
 	}
 
 	return &dynamodbLock{
@@ -369,17 +362,16 @@ func updateWithConditions(item *dynamodb.UpdateItemInput, previous *KVPair) erro
 	return nil
 }
 
-func encodePayload(payload []byte) *dynamodb.AttributeValue {
-	encodedValue := base64.StdEncoding.EncodeToString(payload)
-	return &dynamodb.AttributeValue{S: aws.String(encodedValue)}
-}
-
 func decodeItem(item map[string]*dynamodb.AttributeValue) (*KVPair, error) {
 	kv := &KVPair{}
 
 	err := dynamodbattribute.UnmarshalMap(item, kv)
 	if err != nil {
 		return nil, err
+	}
+
+	if val, ok := item["payload"]; ok {
+		kv.value = val
 	}
 
 	return kv, nil

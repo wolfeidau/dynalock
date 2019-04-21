@@ -1,6 +1,10 @@
 package dynalock
 
-import "time"
+import (
+	"time"
+
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+)
 
 type dynamodbLock struct {
 	ddb      *Dynalock
@@ -9,7 +13,7 @@ type dynamodbLock struct {
 	unlockCh chan struct{}
 
 	key   string
-	value []byte
+	value *dynamodb.AttributeValue
 	ttl   time.Duration
 }
 
@@ -59,11 +63,10 @@ func (l *dynamodbLock) Unlock() error {
 func (l *dynamodbLock) tryLock(lockHeld chan struct{}, stopChan chan struct{}) (bool, error) {
 	success, new, err := l.ddb.AtomicPut(
 		l.key,
-		l.value,
-		l.last,
-		&WriteOptions{
-			TTL: l.ttl,
-		})
+		WriteWithPreviousKV(l.last),
+		WriteWithAttributeValue(l.value),
+		WriteWithTTL(l.ttl),
+	)
 	if err != nil {
 		if err == ErrKeyNotFound || err == ErrKeyModified || err == ErrKeyExists {
 			return false, nil
@@ -86,11 +89,10 @@ func (l *dynamodbLock) holdLock(lockHeld, stopChan chan struct{}) {
 	hold := func() error {
 		_, new, err := l.ddb.AtomicPut(
 			l.key,
-			l.value,
-			l.last,
-			&WriteOptions{
-				TTL: l.ttl,
-			})
+			WriteWithPreviousKV(l.last),
+			WriteWithAttributeValue(l.value),
+			WriteWithTTL(l.ttl),
+		)
 		if err == nil {
 			l.last = new
 		}

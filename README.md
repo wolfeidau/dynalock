@@ -10,28 +10,28 @@ The main interfaces are as follows.
 // Store represents the backend K/V storage
 type Store interface {
 	// Put a value at the specified key
-	Put(key string, value []byte, options *WriteOptions) error
+	Put(key string, options ...WriteOption) error
 
 	// Get a value given its key
-	Get(key string, options *ReadOptions) (*KVPair, error)
+	Get(key string, options ...ReadOption) (*KVPair, error)
 
 	// List the content of a given prefix
-	List(prefix string, options *ReadOptions) ([]*KVPair, error)
+	List(prefix string, options ...ReadOption) ([]*KVPair, error)
 
 	// Delete the value at the specified key
 	Delete(key string) error
 
 	// Verify if a Key exists in the store
-	Exists(key string, options *ReadOptions) (bool, error)
+	Exists(key string, options ...ReadOption) (bool, error)
 
 	// NewLock creates a lock for a given key.
 	// The returned Locker is not held and must be acquired
 	// with `.Lock`. The Value is optional.
-	NewLock(key string, options *LockOptions) (Locker, error)
+	NewLock(key string, options ...LockOption) (Locker, error)
 
 	// Atomic CAS operation on a single value.
 	// Pass previous = nil to create a new key.
-	AtomicPut(key string, value []byte, previous *KVPair, options *WriteOptions) (bool, *KVPair, error)
+	AtomicPut(key string, options ...WriteOption) (bool, *KVPair, error)
 
 	// Atomic delete of a single value
 	AtomicDelete(key string, previous *KVPair) (bool, error)

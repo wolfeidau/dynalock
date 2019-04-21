@@ -129,7 +129,7 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 	assert := require.New(t)
 
 	// Get a not exist key should return ErrKeyNotFound
-	_, err := kv.Get("testPutGetDelete_not_exist_key", nil)
+	_, err := kv.Get("testPutGetDelete_not_exist_key")
 	assert.Equal(ErrKeyNotFound, err)
 
 	value := []byte("bar")
@@ -141,18 +141,18 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 	} {
 
 		// Put the key
-		err = kv.Put(key, value, &WriteOptions{TTL: 2 * time.Second})
+		err = kv.Put(key, WriteWithBytes(value), WriteWithTTL(2*time.Second))
 		assert.NoError(err)
 
 		// Get should return the value and an incremented index
-		pair, err := kv.Get(key, nil)
+		pair, err := kv.Get(key)
 		assert.NoError(err)
 		assert.NotNil(pair)
-		assert.Equal(pair.Value, value)
-		assert.NotEqual(pair.Version, 0)
+		assert.Equal(value, pair.BytesValue())
+		assert.NotEqual(0, pair.Version)
 
 		// Exists should return true
-		exists, err := kv.Exists(key, nil)
+		exists, err := kv.Exists(key)
 		assert.NoError(err)
 		assert.True(exists)
 
@@ -161,13 +161,13 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 		assert.NoError(err)
 
 		// Get should fail
-		pair, err = kv.Get(key, nil)
+		pair, err = kv.Get(key)
 		assert.Error(err)
 		assert.Nil(pair)
 		assert.Nil(pair)
 
 		// Exists should return false
-		exists, err = kv.Exists(key, nil)
+		exists, err = kv.Exists(key)
 		assert.NoError(err)
 		assert.False(exists)
 	}
@@ -181,7 +181,7 @@ func testLockUnlock(t *testing.T, kv Store) {
 	value := []byte("bar")
 
 	// We should be able to create a new lock on key
-	lock, err := kv.NewLock(key, &LockOptions{Value: value, TTL: 2 * time.Second})
+	lock, err := kv.NewLock(key, LockWithTTL(2*time.Second), LockWithBytes(value))
 	assert.NoError(err)
 	assert.NotNil(lock)
 
@@ -191,10 +191,10 @@ func testLockUnlock(t *testing.T, kv Store) {
 	assert.NotNil(lockChan)
 
 	// Get should work
-	pair, err := kv.Get(key, nil)
+	pair, err := kv.Get(key)
 	assert.NoError(err)
-	assert.Equal(pair.Value, value)
-	assert.NotEqual(pair.Version, 0)
+	assert.Equal(value, pair.BytesValue())
+	assert.NotEqual(0, pair.Version)
 
 	// Unlock should succeed
 	err = lock.Unlock()
@@ -206,10 +206,10 @@ func testLockUnlock(t *testing.T, kv Store) {
 	assert.NotNil(lockChan)
 
 	// Get should work
-	pair, err = kv.Get(key, nil)
+	pair, err = kv.Get(key)
 	assert.NoError(err)
-	assert.Equal(pair.Value, value)
-	assert.NotEqual(pair.Version, 0)
+	assert.Equal(value, pair.BytesValue())
+	assert.NotEqual(0, pair.Version)
 
 	err = lock.Unlock()
 	assert.NoError(err)
@@ -223,22 +223,22 @@ func testList(t *testing.T, kv Store) {
 	subfolderKey := "testList/subfolder"
 
 	// Put the first child key
-	err := kv.Put(childKey, []byte("first"), nil)
+	err := kv.Put(childKey, WriteWithBytes([]byte("first")))
 	assert.NoError(err)
 
 	// Put the second child key which is also a directory
-	err = kv.Put(subfolderKey, []byte("second"), nil)
+	err = kv.Put(subfolderKey, WriteWithBytes([]byte("second")))
 	assert.NoError(err)
 
 	// Put child keys under secondKey
 	for i := 1; i <= 3; i++ {
 		key := "testList/subfolder/key" + strconv.Itoa(i)
-		err := kv.Put(key, []byte("value"), nil)
+		err := kv.Put(key, WriteWithBytes([]byte("value")))
 		assert.NoError(err)
 	}
 
 	// List should work and return five child entries
-	pairs, err := kv.List("testList/subfolder/key", nil)
+	pairs, err := kv.List("testList/subfolder/key")
 	assert.NoError(err)
 	assert.NotNil(pairs)
 	assert.Equal(3, len(pairs))
@@ -253,29 +253,29 @@ func testAtomicPut(t *testing.T, kv Store) {
 	value := []byte("world")
 
 	// Put the key
-	err := kv.Put(key, value, nil)
+	err := kv.Put(key, WriteWithBytes(value))
 	assert.NoError(err)
 
 	// Get should return the value and an incremented index
-	pair, err := kv.Get(key, nil)
+	pair, err := kv.Get(key)
 	assert.NoError(err)
 	assert.NotNil(pair)
-	assert.Equal(pair.Value, value)
-	assert.NotEqual(pair.Version, 0)
+	assert.Equal(value, pair.BytesValue())
+	assert.NotEqual(0, pair.Version)
 
 	// This CAS should fail: previous exists.
-	success, _, err := kv.AtomicPut(key, []byte("WORLD"), nil, nil)
+	success, _, err := kv.AtomicPut(key, WriteWithBytes([]byte("WORLD")))
 	assert.Error(err)
 	assert.False(success)
 
 	// This CAS should succeed
-	success, _, err = kv.AtomicPut(key, []byte("WORLD"), pair, nil)
+	success, _, err = kv.AtomicPut(key, WriteWithPreviousKV(pair), WriteWithBytes([]byte("WORLD")))
 	assert.NoError(err)
 	assert.True(success)
 
 	// This CAS should fail, key has wrong index.
 	pair.Version = 6744
-	success, _, err = kv.AtomicPut(key, []byte("WORLDWORLD"), pair, nil)
+	success, _, err = kv.AtomicPut(key, WriteWithPreviousKV(pair), WriteWithBytes([]byte("WORLDWORLD")))
 	assert.Equal(err, ErrKeyModified)
 	assert.False(success)
 }
@@ -288,15 +288,15 @@ func testAtomicDelete(t *testing.T, kv Store) {
 	value := []byte("world")
 
 	// Put the key
-	err := kv.Put(key, value, nil)
+	err := kv.Put(key, WriteWithBytes(value))
 	assert.NoError(err)
 
 	// Get should return the value and an incremented index
-	pair, err := kv.Get(key, nil)
+	pair, err := kv.Get(key)
 	assert.NoError(err)
 	assert.NotNil(pair)
-	assert.Equal(pair.Value, value)
-	assert.NotEqual(pair.Version, 0)
+	assert.Equal(value, pair.BytesValue())
+	assert.NotEqual(0, pair.Version)
 
 	tempIndex := pair.Version
 
