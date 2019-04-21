@@ -1,6 +1,7 @@
 package dynalock_test
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -33,9 +34,32 @@ func ExampleDynalock_Put() {
 
 	dl := dynalock.New(dbSvc, "testing-locks", "agent")
 
+	message := struct{ Message string }{Message: "hello"}
+
+	attrVal, _ := dynalock.MarshalStruct(&message)
+
 	dl.Put(
 		"agents/123",
-		dynalock.WriteWithBytes([]byte(`{"agent": "testing"}`)),
+		dynalock.WriteWithAttributeValue(attrVal),
 	)
 
+}
+
+func ExampleDynalock_Get() {
+
+	type message struct{ Message string }
+
+	sess := session.Must(session.NewSession())
+
+	dbSvc := dynamodb.New(sess)
+
+	dl := dynalock.New(dbSvc, "testing-locks", "agent")
+
+	kv, _ := dl.Get("agents/123")
+
+	msg := &message{}
+
+	dynalock.UnmarshalStruct(kv.AttributeValue(), msg)
+
+	fmt.Println("Message:", msg.Message)
 }
