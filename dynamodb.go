@@ -19,7 +19,9 @@ type Dynalock struct {
 	partition string
 }
 
-// KVPair represents {Key, Value, Lastindex} tuple
+// KVPair represents {Key, Value, Version} tuple, internally
+// this uses a *dynamodb.AttributeValue which can be used to
+// store strings, slices or structs
 type KVPair struct {
 	Partition string `dynamodbav:"id"`
 	Key       string `dynamodbav:"name"`
@@ -386,4 +388,20 @@ func isItemExpired(item map[string]*dynamodb.AttributeValue) bool {
 	}
 
 	return false
+}
+
+// MarshalStruct this helper method marshals a struct into an *dynamodb.AttributeValue which contains a map
+// in the format required to provide to WriteWithAttributeValue.
+func MarshalStruct(in interface{}) (*dynamodb.AttributeValue, error) {
+	item, err := dynamodbattribute.MarshalMap(in)
+	if err != nil {
+		return nil, err
+	}
+
+	return &dynamodb.AttributeValue{M: item}, nil
+}
+
+// UnmarshalStruct this helper method un-marshals a struct from an *dynamodb.AttributeValue returned by KVPair.AttributeValue.
+func UnmarshalStruct(val *dynamodb.AttributeValue, out interface{}) error {
+	return dynamodbattribute.UnmarshalMap(val.M, out)
 }
