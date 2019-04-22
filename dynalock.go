@@ -98,6 +98,13 @@ func WriteWithTTL(ttl time.Duration) WriteOption {
 	}
 }
 
+// WriteWithNoExpires time to live (TTL) is set not set so it never expires
+func WriteWithNoExpires() WriteOption {
+	return func(opts *WriteOptions) {
+		opts.ttl = 0
+	}
+}
+
 // WriteWithBytes byte slice to the key which is written
 func WriteWithBytes(val []byte) WriteOption {
 	return func(opts *WriteOptions) {
