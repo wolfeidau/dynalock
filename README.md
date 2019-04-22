@@ -1,6 +1,8 @@
 # dynalock
 
-This is a small lock library written Go, which uses [AWS DynamoDB](https://aws.amazon.com/dynamodb/) as the data store.
+This is a small K/V library written Go, which uses [AWS DynamoDB](https://aws.amazon.com/dynamodb/) as the data store.
+
+It supports create, read, update and delete (CRUD) for key/value pairs, and provides locks based on the `sync.Lock` API.
 
 # Usage
 
@@ -48,6 +50,8 @@ type Locker interface {
 # References
 
 This borrows a lot of ideas, tests and a subset of the API from https://github.com/abronan/valkeyrie.
+
+Updates to the original API are based on a great blog post by @davecheney https://dave.cheney.net/2014/10/17/functional-options-for-friendly-apis
 
 # License
 

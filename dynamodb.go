@@ -26,6 +26,7 @@ type KVPair struct {
 	Partition string `dynamodbav:"id"`
 	Key       string `dynamodbav:"name"`
 	Version   int64  `dynamodbav:"version"`
+	Expires   int64  `dynamodbav:"expires"`
 	// handled separately to enable an number of stored values
 	value *dynamodb.AttributeValue
 }
@@ -292,21 +293,25 @@ func (ddb *Dynalock) getKey(key string, options *ReadOptions) (*dynamodb.GetItem
 
 func (ddb *Dynalock) buildUpdateItemInput(key string, options *WriteOptions) *dynamodb.UpdateItemInput {
 
-	ttlVal := time.Now().Add(options.ttl).Unix()
-
 	expressions := map[string]*dynamodb.AttributeValue{
 		":inc":     {N: aws.String("1")},
 		":payload": options.value,
-		":ttl":     {N: aws.String(strconv.FormatInt(ttlVal, 10))},
 	}
 
-	updateExpression := aws.String("ADD version :inc SET payload = :payload, expires = :ttl")
+	updateExpression := "ADD version :inc SET payload = :payload"
+
+	if options.ttl > 0 {
+		ttlVal := time.Now().Add(options.ttl).Unix()
+		expressions[":ttl"] = &dynamodb.AttributeValue{N: aws.String(strconv.FormatInt(ttlVal, 10))}
+
+		updateExpression = updateExpression + ", expires = :ttl"
+	}
 
 	return &dynamodb.UpdateItemInput{
 		TableName:                 aws.String(ddb.tableName),
 		Key:                       buildKeys(ddb.partition, key),
 		ExpressionAttributeValues: expressions,
-		UpdateExpression:          updateExpression,
+		UpdateExpression:          aws.String(updateExpression),
 		ReturnValues:              aws.String(dynamodb.ReturnValueAllNew),
 	}
 

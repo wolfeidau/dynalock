@@ -149,6 +149,8 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 		assert.NoError(err)
 		assert.NotNil(pair)
 		assert.Equal(value, pair.BytesValue())
+		assert.NotEqual(0, pair.Expires)
+
 		assert.NotEqual(0, pair.Version)
 
 		// Exists should return true
@@ -171,6 +173,19 @@ func testPutGetDeleteExists(t *testing.T, kv Store) {
 		assert.NoError(err)
 		assert.False(exists)
 	}
+
+	key := "something/withoutExpires"
+
+	// Put the key
+	err = kv.Put(key, WriteWithBytes(value), WriteWithNoExpires())
+	assert.NoError(err)
+
+	// Get should return the value and an incremented index
+	pair, err := kv.Get(key)
+	assert.NoError(err)
+	assert.NotNil(pair)
+	assert.Equal(value, pair.BytesValue())
+	assert.Equal(int64(0), pair.Expires)
 }
 
 func testLockUnlock(t *testing.T, kv Store) {
