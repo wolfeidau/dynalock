@@ -53,6 +53,7 @@ func Test(t *testing.T) {
 			testList(t, dl)
 			testAtomicPut(t, dl)
 			testAtomicDelete(t, dl)
+			testLockTTL(t, dl, dl)
 		})
 }
 
@@ -331,4 +332,100 @@ func testAtomicDelete(t *testing.T, kv Store) {
 	success, err = kv.AtomicDelete(key, pair)
 	assert.Equal(ErrKeyNotFound, err)
 	assert.False(success)
+}
+
+func testLockTTL(t *testing.T, kv Store, otherConn Store) {
+
+	assert := require.New(t)
+
+	key := "testLockTTL"
+	value := []byte("bar")
+
+	renewCh := make(chan struct{})
+
+	// We should be able to create a new lock on key
+	lock, err := otherConn.NewLock(key, LockWithBytes(value), LockWithTTL(2*time.Second), LockWithRenewLock(renewCh))
+	assert.NoError(err)
+	assert.NotNil(lock)
+
+	// Lock should successfully succeed
+	lockChan, err := lock.Lock(nil)
+	assert.NoError(err)
+	assert.NotNil(lockChan)
+
+	// Get should work
+	pair, err := otherConn.Get(key)
+	assert.NoError(err)
+	assert.NotNil(pair)
+	assert.Equal(value, pair.BytesValue())
+	assert.NotEqual(0, pair.Version)
+
+	time.Sleep(3 * time.Second)
+
+	done := make(chan struct{})
+	stop := make(chan struct{})
+
+	value = []byte("foobar")
+
+	// Create a new lock with another connection
+	lock, err = kv.NewLock(
+		key,
+		LockWithBytes(value),
+		LockWithTTL(3*time.Second),
+	)
+	assert.NoError(err)
+	assert.NotNil(lock)
+
+	// Lock should block, the session on the lock
+	// is still active and renewed periodically
+	go func(<-chan struct{}) {
+		_, _ = lock.Lock(stop)
+		done <- struct{}{}
+	}(done)
+
+	select {
+	case <-done:
+		t.Fatal("Lock succeeded on a key that is supposed to be locked by another client")
+	case <-time.After(4 * time.Second):
+		// Stop requesting the lock as we are blocked as expected
+		stop <- struct{}{}
+		break
+	}
+
+	// Force stop the session renewal for the lock
+	close(renewCh)
+
+	// Let the session on the lock expire
+	time.Sleep(3 * time.Second)
+	locked := make(chan struct{})
+	errCh := make(chan error)
+
+	// Lock should now succeed for the other client
+	go func(<-chan struct{}, <-chan error) {
+		lockChan, err = lock.Lock(nil)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		locked <- struct{}{}
+	}(locked, errCh)
+
+	select {
+	case err = <-errCh:
+		t.Fatalf("Unable to take the lock: %v", err)
+	case <-locked:
+		break
+	case <-time.After(4 * time.Second):
+		t.Fatal("Unable to take the lock, timed out")
+	}
+
+	// Get should work with the new value
+	pair, err = kv.Get(key)
+	assert.NoError(err)
+	assert.NotNil(pair)
+	assert.Equal(value, pair.BytesValue())
+	assert.NotEqual(0, pair.Version)
+
+	err = lock.Unlock()
+	assert.NoError(err)
 }
