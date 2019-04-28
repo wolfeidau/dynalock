@@ -6,7 +6,7 @@ It supports create, read, update and delete (CRUD) for key/value pairs, and prov
 
 # Usage
 
-The main interfaces are as follows.
+The main interfaces are as follows, for something more complete see the [competing consumers example](examples/competing-consumers/main.go).
 
 ```go
 // Store represents the backend K/V storage
