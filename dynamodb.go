@@ -3,6 +3,7 @@ package dynalock
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
@@ -202,20 +203,9 @@ func (ddb *Dynalock) AtomicPut(key string, options ...WriteOption) (bool, *KVPai
 
 	writeOptions := NewWriteOptions(options...)
 
-	getRes, err := ddb.getKey(key, NewReadOptions())
-	if err != nil {
-		return false, nil, err
-	}
-
-	// AtomicPut is equivalent to Put if previous is nil and the Key
-	// exist in the DB or is not expired.
-	if writeOptions.previous == nil && getRes.Item != nil && !isItemExpired(getRes.Item) {
-		return false, nil, ErrKeyExists
-	}
-
 	params := ddb.buildUpdateItemInput(key, writeOptions)
 
-	err = updateWithConditions(params, writeOptions.previous)
+	err := updateWithConditions(params, writeOptions.previous)
 	if err != nil {
 		return false, nil, err
 	}
@@ -225,6 +215,9 @@ func (ddb *Dynalock) AtomicPut(key string, options ...WriteOption) (bool, *KVPai
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok {
 			if awsErr.Code() == dynamodb.ErrCodeConditionalCheckFailedException {
+				if writeOptions.previous == nil {
+					return false, nil, ErrKeyExists
+				}
 				return false, nil, ErrKeyModified
 			}
 		}
@@ -294,17 +287,31 @@ func (ddb *Dynalock) getKey(key string, options *ReadOptions) (*dynamodb.GetItem
 func (ddb *Dynalock) buildUpdateItemInput(key string, options *WriteOptions) *dynamodb.UpdateItemInput {
 
 	expressions := map[string]*dynamodb.AttributeValue{
-		":inc":     {N: aws.String("1")},
-		":payload": options.value,
+		":inc": {N: aws.String("1")},
 	}
 
-	updateExpression := "ADD version :inc SET payload = :payload"
+	updateExpression := "ADD version :inc"
 
+	setArgs := []string{}
+
+	// if a value assigned
+	if options.value != nil {
+		expressions[":payload"] = options.value
+
+		setArgs = append(setArgs, "payload = :payload")
+	}
+
+	// if a TTL assigned
 	if options.ttl > 0 {
 		ttlVal := time.Now().Add(options.ttl).Unix()
 		expressions[":ttl"] = &dynamodb.AttributeValue{N: aws.String(strconv.FormatInt(ttlVal, 10))}
 
-		updateExpression = updateExpression + ", expires = :ttl"
+		setArgs = append(setArgs, "expires = :ttl")
+	}
+
+	// if we have anything to set append them to the update expression
+	if len(setArgs) > 0 {
+		updateExpression = updateExpression + " SET " + strings.Join(setArgs, ",")
 	}
 
 	return &dynamodb.UpdateItemInput{
@@ -358,13 +365,28 @@ func buildKeys(partition, key string) map[string]*dynamodb.AttributeValue {
 func updateWithConditions(item *dynamodb.UpdateItemInput, previous *KVPair) error {
 
 	if previous != nil {
+		//
+		// if there is a previous provided then we override the create check
+		//
 
 		item.ExpressionAttributeValues[":lastRevision"] = &dynamodb.AttributeValue{N: aws.String(strconv.FormatInt(previous.Version, 10))}
 		item.ExpressionAttributeValues[":timeNow"] = &dynamodb.AttributeValue{N: aws.String(strconv.FormatInt(time.Now().Unix(), 10))}
 
 		// the previous kv is in the DB and is at the expected revision, also if it has a TTL set it is NOT expired.
 		item.ConditionExpression = aws.String("version = :lastRevision AND (attribute_not_exists(expires) OR (attribute_exists(expires) AND expires > :timeNow))")
+
+		return nil
 	}
+
+	//
+	// assign the create check to ensure record doesn't exist which isn't expired
+	//
+
+	item.ExpressionAttributeNames = map[string]*string{"#name": aws.String("name")}
+	item.ExpressionAttributeValues[":timeNow"] = &dynamodb.AttributeValue{N: aws.String(strconv.FormatInt(time.Now().Unix(), 10))}
+
+	// if the record exists and is NOT expired
+	item.ConditionExpression = aws.String("(attribute_not_exists(id) AND attribute_not_exists(#name)) OR (attribute_exists(expires) AND expires < :timeNow)")
 
 	return nil
 }

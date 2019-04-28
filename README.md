@@ -33,6 +33,7 @@ type Store interface {
 
 	// Atomic CAS operation on a single value.
 	// Pass previous = nil to create a new key.
+	// Pass previous = kv to update an existing value.
 	AtomicPut(key string, options ...WriteOption) (bool, *KVPair, error)
 
 	// Atomic delete of a single value
@@ -42,7 +43,10 @@ type Store interface {
 // Locker provides locking mechanism on top of the store.
 // Similar to `sync.Lock` except it may return errors.
 type Locker interface {
+	// Lock attempt to lock the store record, this will BLOCK and retry at a rate of once every 3 seconds
 	Lock(stopChan chan struct{}) (<-chan struct{}, error)
+
+	// Unlock this will unlock and perfom a DELETE to remove the store record
 	Unlock() error
 }
 ```

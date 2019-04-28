@@ -6,6 +6,11 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 )
 
+var (
+	// DefaultLockBackOff if locing is unsuccessful then this backoff will be used
+	DefaultLockBackOff = 3 * time.Second
+)
+
 type dynamodbLock struct {
 	ddb      *Dynalock
 	last     *KVPair
@@ -17,6 +22,7 @@ type dynamodbLock struct {
 	ttl   time.Duration
 }
 
+// Lock attempt to lock the DynamoDB record, this will BLOCK and retry at a rate of once every 3 seconds
 func (l *dynamodbLock) Lock(stopChan chan struct{}) (<-chan struct{}, error) {
 	lockHeld := make(chan struct{})
 
@@ -29,7 +35,7 @@ func (l *dynamodbLock) Lock(stopChan chan struct{}) (<-chan struct{}, error) {
 	}
 
 	// FIXME: This really needs a jitter for backoff
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(DefaultLockBackOff)
 
 	for {
 		select {
@@ -48,6 +54,7 @@ func (l *dynamodbLock) Lock(stopChan chan struct{}) (<-chan struct{}, error) {
 
 }
 
+// Unlock this will unlock and perfom a DELETE to remove the DynamoDB record
 func (l *dynamodbLock) Unlock() error {
 	l.unlockCh <- struct{}{}
 
