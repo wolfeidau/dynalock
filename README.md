@@ -1,8 +1,10 @@
-# dynalock
+# dynalock 
 
 This is a small K/V library written Go, which uses [AWS DynamoDB](https://aws.amazon.com/dynamodb/) as the data store.
 
 It supports create, read, update and delete (CRUD) for key/value pairs, and provides locks based on the `sync.Lock` API.
+
+<a href="https://github.com/wolfeidau/dynalock/actions?query=workflow%3ATests"><img alt="GitHub Actions status" src="https://github.com/wolfeidau/dynalock/workflows/Tests/badge.svg?branch=master&event=push"></a>
 
 # What is the problem?
 

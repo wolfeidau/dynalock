@@ -3,7 +3,7 @@ ci: deps lint test ##=> Run all CI targets
 
 lint: ##=> Lint all the things
 	@echo "--- lint all the things"
-	@golangci-lint run
+	@$(shell pwd)/.bin/golangci-lint run
 .PHONY: lint
 
 clean: ##=> Clean all the things
@@ -12,7 +12,7 @@ clean: ##=> Clean all the things
 
 deps: ##=> Intall all the dependencies to build
 	$(info [+] Installing deps...")
-	@GO111MODULE=off go get -v -u github.com/golangci/golangci-lint/cmd/golangci-lint
+	@curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b $(shell pwd)/.bin v1.21.0
 .PHONY: deps
 
 test: ##=> Run the tests
