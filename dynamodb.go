@@ -8,6 +8,7 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
@@ -51,6 +52,19 @@ func (kv *KVPair) AttributeValue() *dynamodb.AttributeValue {
 
 // New construct a DynamoDB backed locking store
 func New(dynamoSvc dynamodbiface.DynamoDBAPI, tableName, partition string) Store {
+	return &Dynalock{
+		dynamoSvc: dynamoSvc,
+		tableName: tableName,
+		partition: partition,
+	}
+}
+
+// NewWithDefaults construct a DynamoDB backed locking store with default session / service
+func NewWithDefaults(tableName, partition string) Store {
+
+	sess := session.Must(session.NewSession())
+	dynamoSvc := dynamodb.New(sess)
+
 	return &Dynalock{
 		dynamoSvc: dynamoSvc,
 		tableName: tableName,
