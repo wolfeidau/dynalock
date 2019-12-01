@@ -153,7 +153,7 @@ func NewReadOptions(opts ...ReadOption) *ReadOptions {
 	return readOpts
 }
 
-// ReadWithConsistent enable consistent reads
+// ReadConsistentDisable disable consistent reads
 func ReadConsistentDisable() ReadOption {
 	return func(opts *ReadOptions) {
 		opts.consistent = false

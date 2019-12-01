@@ -1,2 +1,2 @@
-// Package provides a locking store powered by AWS DynamoDB.
+// Package dynalock provides a locking store powered by AWS DynamoDB.
 package dynalock

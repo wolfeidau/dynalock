@@ -117,7 +117,7 @@ func (w *worker) startup() {
 
 }
 
-// seperated out each iteration to take advantage of defer and ensure it is easier to test
+// separated out each iteration to take advantage of defer and ensure it is easier to test
 func (w *worker) doWork(kv *dynalock.KVPair) {
 	lock, err := w.lockStore.NewLock("orchestra/"+w.name, defaultLockTtl)
 	if err != nil {

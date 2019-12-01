@@ -4,7 +4,9 @@ This is a small K/V library written Go, which uses [AWS DynamoDB](https://aws.am
 
 It supports create, read, update and delete (CRUD) for key/value pairs, and provides locks based on the `sync.Lock` API.
 
-<a href="https://github.com/wolfeidau/dynalock/actions?query=workflow%3ATests"><img alt="GitHub Actions status" src="https://github.com/wolfeidau/dynalock/workflows/Tests/badge.svg?branch=master&event=push"></a>
+[![GitHub Actions status](https://github.com/wolfeidau/dynalock/workflows/Go/badge.svg?branch=master)](https://github.com/wolfeidau/dynalock/actions?query=workflow%3AGo)
+[![Go Report Card](https://goreportcard.com/badge/github.com/wolfeidau/dynalock)](https://goreportcard.com/report/github.com/wolfeidau/dynalock)
+[![Documentation](https://godoc.org/github.com/wolfeidau/dynalock?status.svg)](https://godoc.org/github.com/wolfeidau/dynalock)
 
 # What is the problem?
 
