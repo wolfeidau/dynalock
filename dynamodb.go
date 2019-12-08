@@ -217,6 +217,12 @@ func (ddb *Dynalock) AtomicPut(key string, options ...WriteOption) (bool, *KVPai
 
 	writeOptions := NewWriteOptions(options...)
 
+	// if writeOptions.previous != nil {
+	// 	if writeOptions.ttl == DefaultLockTTL {
+	// 		writeOptions.ttl = writeOptions.previous.Expires
+	// 	}
+	// }
+
 	params := ddb.buildUpdateItemInput(key, writeOptions)
 
 	err := updateWithConditions(params, writeOptions.previous)

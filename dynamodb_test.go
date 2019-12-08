@@ -1,7 +1,9 @@
 package dynalock
 
 import (
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -44,4 +46,48 @@ func TestUnmarshalStruct(t *testing.T) {
 	err := UnmarshalStruct(in, val)
 	assert.NoError(err)
 	assert.Equal(want, val)
+}
+
+func Test_buildUpdateItemInput(t *testing.T) {
+	assert := require.New(t)
+
+	ddl := &Dynalock{partition: "test", tableName: "testTable"}
+
+	update := ddl.buildUpdateItemInput("abc123", &WriteOptions{ttl: 300 * time.Second})
+
+	expectedUpdate := dynamodb.UpdateItemInput{
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
+			":inc": &dynamodb.AttributeValue{
+				N: aws.String("1"),
+			},
+			":ttl": {
+				N: aws.String("1575725615"),
+			},
+		},
+		Key: map[string]*dynamodb.AttributeValue{
+			"id": &dynamodb.AttributeValue{
+				S: aws.String("test"),
+			},
+			"name": &dynamodb.AttributeValue{
+				S: aws.String("abc123"),
+			},
+		},
+		ReturnValues:     aws.String("ALL_NEW"),
+		TableName:        aws.String("testTable"),
+		UpdateExpression: aws.String("ADD version :inc SET expires = :ttl"),
+	}
+
+	assert.Equal(expectedUpdate.Key, update.Key)
+
+	ttlTime := convertTTL(update.ExpressionAttributeValues[":ttl"].N)
+
+	// ensure the TTL has been applied
+	assert.True(time.Now().Add(200 * time.Second).Before(ttlTime))
+
+}
+
+func convertTTL(val *string) time.Time {
+	ttl := aws.StringValue(val)
+	tval, _ := strconv.ParseInt(ttl, 10, 64)
+	return time.Unix(tval, 0)
 }
