@@ -42,48 +42,21 @@ I will be posting some graphs, and analysis of my work as I go to help flesh thi
 
 The main interfaces are as follows, for something more complete see the [competing consumers example](examples/competing-consumers/main.go).
 
-```go
-// Store represents the backend K/V storage
-type Store interface {
-	// Put a value at the specified key
-	Put(key string, options ...WriteOption) error
-
-	// Get a value given its key
-	Get(key string, options ...ReadOption) (*KVPair, error)
-
-	// List the content of a given prefix
-	List(prefix string, options ...ReadOption) ([]*KVPair, error)
-
-	// Delete the value at the specified key
-	Delete(key string) error
-
-	// Verify if a Key exists in the store
-	Exists(key string, options ...ReadOption) (bool, error)
-
-	// NewLock creates a lock for a given key.
-	// The returned Locker is not held and must be acquired
-	// with `.Lock`. The Value is optional.
-	NewLock(key string, options ...LockOption) (Locker, error)
-
-	// Atomic CAS operation on a single value.
-	// Pass previous = nil to create a new key.
-	// Pass previous = kv to update an existing value.
-	AtomicPut(key string, options ...WriteOption) (bool, *KVPair, error)
-
-	// Atomic delete of a single value
-	AtomicDelete(key string, previous *KVPair) (bool, error)
-}
-
-// Locker provides locking mechanism on top of the store.
-// Similar to `sync.Lock` except it may return errors.
-type Locker interface {
-	// Lock attempt to lock the store record, this will BLOCK and retry at a rate of once every 3 seconds
-	Lock(stopChan chan struct{}) (<-chan struct{}, error)
-
-	// Unlock this will unlock and perfom a DELETE to remove the store record
-	Unlock() error
-}
 ```
+go get -u -v github.com/wolfeidau/dynalock
+```
+
+[v1.x Go Documentation](https://pkg.go.dev/github.com/wolfeidau/dynalock?tab=doc)
+
+# Looking for AWS SDK v2?
+
+I have added a new [v2](v2) module which supports https://github.com/aws/aws-sdk-go-v2. 
+
+```
+go get -u -v github.com/wolfeidau/dynalock/v2
+```
+
+[v2.x Go Documentation](https://pkg.go.dev/github.com/wolfeidau/dynalock/v2?tab=doc)
 
 # References
 
