@@ -54,6 +54,7 @@ func Test(t *testing.T) {
 			testAtomicPut(t, dl)
 			testAtomicDelete(t, dl)
 			testLockTTL(t, dl, dl)
+			t.Run("testPutGetDeleteExists", testLockTTLWithContext(dl, dl))
 		})
 }
 
@@ -428,4 +429,95 @@ func testLockTTL(t *testing.T, kv Store, otherConn Store) {
 
 	err = lock.Unlock()
 	assert.NoError(err)
+}
+
+func testLockTTLWithContext(kv Store, otherConn Store) func(t *testing.T) {
+	return func(t *testing.T) {
+		assert := require.New(t)
+
+		key := "testLockTTLWithContext"
+		value := []byte("bar")
+
+		renewCh := make(chan struct{})
+
+		// We should be able to create a new lock on key
+		lock, err := otherConn.NewLock(key, LockWithBytes(value), LockWithTTL(2*time.Second), LockWithRenewLock(renewCh))
+		assert.NoError(err)
+		assert.NotNil(lock)
+
+		// Lock should successfully succeed
+		lockChan, err := lock.Lock(nil)
+		assert.NoError(err)
+		assert.NotNil(lockChan)
+
+		// Get should work
+		pair, err := otherConn.Get(key)
+		assert.NoError(err)
+		assert.NotNil(pair)
+		assert.Equal(value, pair.BytesValue())
+		assert.NotEqual(0, pair.Version)
+
+		time.Sleep(3 * time.Second)
+
+		done := make(chan struct{})
+		// stop := make(chan struct{})
+
+		ctx, cancel := context.WithCancel(context.TODO())
+		defer cancel()
+
+		value = []byte("foobar")
+
+		// Create a new lock with another connection
+		lock, err = kv.NewLock(
+			key,
+			LockWithBytes(value),
+			LockWithTTL(3*time.Second),
+		)
+		assert.NoError(err)
+		assert.NotNil(lock)
+
+		// Lock should block, the session on the lock
+		// is still active and renewed periodically
+		go func(<-chan struct{}) {
+			_, _ = lock.LockWithContext(ctx)
+			done <- struct{}{}
+		}(done)
+
+		select {
+		case <-done:
+			t.Fatal("Lock succeeded on a key that is supposed to be locked by another client")
+		case <-time.After(4 * time.Second):
+			// Stop requesting the lock as we are blocked as expected
+			t.Log("cancelling timeout")
+			cancel()
+			break
+		}
+
+		// Force stop the session renewal for the lock
+		close(renewCh)
+
+		locked := make(chan struct{})
+		errCh := make(chan error)
+
+		// Trigger a timeout
+		ctx, cancel = context.WithTimeout(context.TODO(), 1*time.Second)
+		defer cancel()
+
+		// Lock should now succeed for the other client
+		go func(<-chan struct{}, <-chan error) {
+			lockChan, err = lock.LockWithContext(ctx)
+			if err != nil {
+				errCh <- err
+				return
+			}
+			locked <- struct{}{}
+		}(locked, errCh)
+
+		select {
+		case err = <-errCh:
+			assert.Equal(ErrLockAcquireCancelled, err)
+		case <-locked:
+			t.Fatalf("Unable to take the lock")
+		}
+	}
 }

@@ -1,6 +1,7 @@
 package dynalock
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -64,6 +65,9 @@ type Store interface {
 type Locker interface {
 	// Lock attempt to lock the store record, this will BLOCK and retry at a rate of once every 3 seconds
 	Lock(stopChan chan struct{}) (<-chan struct{}, error)
+
+	// Lock attempt to lock the store record, this will BLOCK and retry at a rate of once every 3 seconds
+	LockWithContext(ctx context.Context) (<-chan struct{}, error)
 
 	// Unlock this will unlock and perfom a DELETE to remove the store record
 	Unlock() error

@@ -1,6 +1,7 @@
 package dynalock
 
 import (
+	"context"
 	"time"
 
 	"github.com/aws/aws-sdk-go/service/dynamodb"
@@ -54,6 +55,38 @@ func (l *dynamodbLock) Lock(stopChan chan struct{}) (<-chan struct{}, error) {
 
 }
 
+// Lock attempt to lock the DynamoDB record, this will BLOCK and retry at a rate of once every 3 seconds
+func (l *dynamodbLock) LockWithContext(ctx context.Context) (<-chan struct{}, error) {
+	lockHeld := make(chan struct{})
+
+	success, err := l.tryLock(lockHeld, ctx.Done())
+	if err != nil {
+		return nil, err
+	}
+	if success {
+		return lockHeld, nil
+	}
+
+	// FIXME: This really needs a jitter for backoff
+	ticker := time.NewTicker(DefaultLockBackOff)
+
+	for {
+		select {
+		case <-ticker.C:
+			success, err := l.tryLock(lockHeld, ctx.Done())
+			if err != nil {
+				return nil, err
+			}
+			if success {
+				return lockHeld, nil
+			}
+		case <-ctx.Done():
+			return nil, ErrLockAcquireCancelled
+		}
+	}
+
+}
+
 // Unlock this will unlock and perfom a DELETE to remove the DynamoDB record
 func (l *dynamodbLock) Unlock() error {
 	l.unlockCh <- struct{}{}
@@ -67,7 +100,7 @@ func (l *dynamodbLock) Unlock() error {
 	return err
 }
 
-func (l *dynamodbLock) tryLock(lockHeld chan struct{}, stopChan chan struct{}) (bool, error) {
+func (l *dynamodbLock) tryLock(lockHeld chan struct{}, stopChan <-chan struct{}) (bool, error) {
 	success, new, err := l.ddb.AtomicPut(
 		l.key,
 		WriteWithPreviousKV(l.last),
@@ -90,7 +123,7 @@ func (l *dynamodbLock) tryLock(lockHeld chan struct{}, stopChan chan struct{}) (
 	return false, err
 }
 
-func (l *dynamodbLock) holdLock(lockHeld, stopChan chan struct{}) {
+func (l *dynamodbLock) holdLock(lockHeld chan struct{}, stopChan <-chan struct{}) {
 	defer close(lockHeld)
 
 	hold := func() error {
