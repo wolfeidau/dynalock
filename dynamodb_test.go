@@ -57,7 +57,7 @@ func Test_buildUpdateItemInput(t *testing.T) {
 
 	expectedUpdate := dynamodb.UpdateItemInput{
 		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":inc": &dynamodb.AttributeValue{
+			":inc": {
 				N: aws.String("1"),
 			},
 			":ttl": {
@@ -65,10 +65,10 @@ func Test_buildUpdateItemInput(t *testing.T) {
 			},
 		},
 		Key: map[string]*dynamodb.AttributeValue{
-			"id": &dynamodb.AttributeValue{
+			"id": {
 				S: aws.String("test"),
 			},
-			"name": &dynamodb.AttributeValue{
+			"name": {
 				S: aws.String("abc123"),
 			},
 		},
