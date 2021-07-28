@@ -55,6 +55,7 @@ func Test(t *testing.T) {
 			testAtomicDelete(t, dl)
 			testLockTTL(t, dl, dl)
 			t.Run("testPutGetDeleteExists", testLockTTLWithContext(dl, dl))
+			t.Run("testLockTTLWithContextCancel", testLockTTLWithContextCancel(dl, dl))
 		})
 }
 
@@ -519,5 +520,55 @@ func testLockTTLWithContext(kv Store, otherConn Store) func(t *testing.T) {
 		case <-locked:
 			t.Fatalf("Unable to take the lock")
 		}
+	}
+}
+
+func testLockTTLWithContextCancel(kv Store, otherConn Store) func(t *testing.T) {
+	return func(t *testing.T) {
+		assert := require.New(t)
+
+		key := "testLockTTLWithContextSync"
+		value := []byte("bar")
+
+		// Create a new lock with another connection
+		lock, err := kv.NewLock(
+			key,
+			LockWithBytes(value),
+			LockWithTTL(3*time.Second),
+		)
+		assert.NoError(err)
+		assert.NotNil(lock)
+
+		// set up a context which will timeout after n seconds waiting for a lock
+		ctx, cancel := context.WithTimeout(context.TODO(), 3*time.Second)
+
+		t.Log("lock created")
+
+		_, err = lock.LockWithContext(ctx)
+		assert.NoError(err)
+
+		t.Log("lock acquired")
+
+		// cancel the context which kills renewals
+		cancel()
+
+		done := make(chan struct{})
+
+		// Unlock shouldn't block even if the context times out or is cancelled
+		go func(<-chan struct{}) {
+			err := lock.Unlock()
+			assert.NoError(err)
+			t.Log("lock released")
+			done <- struct{}{}
+		}(done)
+
+		select {
+		case <-done:
+			t.Log("Unlock succeeded on a key")
+		case <-time.After(1 * time.Second):
+			t.Fatal("Unlock failed on a key with timeout due to blocking")
+			break
+		}
+
 	}
 }

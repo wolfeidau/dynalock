@@ -1,4 +1,4 @@
-GOLANGCI_VERSION = 1.27.0
+GOLANGCI_VERSION = 1.34.0
 
 ci: deps lint test ##=> Run all CI targets
 .PHONY: ci
