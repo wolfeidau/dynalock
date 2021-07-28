@@ -347,9 +347,10 @@ func (ddb *Dynalock) buildUpdateItemInput(key string, options *WriteOptions) *dy
 // NewLock has to implemented at the library level since its not supported by DynamoDB
 func (ddb *Dynalock) NewLock(key string, options ...LockOption) (Locker, error) {
 	var (
-		value   *dynamodb.AttributeValue
-		ttl     = DefaultLockTTL
-		renewCh = make(chan struct{})
+		value    *dynamodb.AttributeValue
+		ttl      = DefaultLockTTL
+		renewCh  = make(chan struct{}, 1)
+		unlockCh = make(chan struct{}, 1)
 	)
 
 	lockOptions := NewLockOptions(options...)
@@ -371,7 +372,7 @@ func (ddb *Dynalock) NewLock(key string, options ...LockOption) (Locker, error) 
 		value:    value,
 		ttl:      ttl,
 		renewCh:  renewCh,
-		unlockCh: make(chan struct{}),
+		unlockCh: unlockCh,
 	}, nil
 }
 

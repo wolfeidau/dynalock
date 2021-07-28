@@ -3,7 +3,7 @@ module github.com/wolfeidau/dynalock
 go 1.12
 
 require (
-	github.com/aws/aws-sdk-go v1.25.43
+	github.com/aws/aws-sdk-go v1.40.9
 	github.com/dhui/dktest v0.3.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/stretchr/testify v1.4.0
