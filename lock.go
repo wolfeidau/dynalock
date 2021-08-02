@@ -8,15 +8,17 @@ import (
 )
 
 var (
-	// DefaultLockBackOff if locing is unsuccessful then this backoff will be used
+	// DefaultLockBackOff if locking is unsuccessful then this backoff will be used
 	DefaultLockBackOff = 3 * time.Second
 )
 
 type dynamodbLock struct {
-	ddb      *Dynalock
-	last     *KVPair
-	renewCh  chan struct{}
-	unlockCh chan struct{}
+	ddb                  *Dynalock
+	last                 *KVPair
+	renewCh              chan struct{}
+	renewEnable          bool
+	tryLockPollingEnable bool
+	unlockCh             chan struct{}
 
 	key   string
 	value *dynamodb.AttributeValue
@@ -33,6 +35,11 @@ func (l *dynamodbLock) Lock(stopChan chan struct{}) (<-chan struct{}, error) {
 	}
 	if success {
 		return lockHeld, nil
+	}
+
+	// if we have disabled renewals then return straight away
+	if !l.tryLockPollingEnable {
+		return nil, ErrLockAcquireFailed
 	}
 
 	// FIXME: This really needs a jitter for backoff
@@ -65,6 +72,11 @@ func (l *dynamodbLock) LockWithContext(ctx context.Context) (<-chan struct{}, er
 	}
 	if success {
 		return lockHeld, nil
+	}
+
+	// if we have disabled renewals then return straight away
+	if !l.tryLockPollingEnable {
+		return nil, ErrLockAcquireFailed
 	}
 
 	// FIXME: This really needs a jitter for backoff
@@ -113,10 +125,16 @@ func (l *dynamodbLock) tryLock(lockHeld chan struct{}, stopChan <-chan struct{})
 		}
 		return false, err
 	}
+
 	if success {
 		l.last = new
-		// keep holding
-		go l.holdLock(lockHeld, stopChan)
+
+		// if renewals are enabled then hold the lock in the background
+		if l.renewEnable {
+			// keep holding
+			go l.holdLock(lockHeld, stopChan)
+		}
+
 		return true, nil
 	}
 

@@ -110,16 +110,20 @@ type LockOption func(opts *LockOptions)
 
 // LockOptions contains optional request parameters
 type LockOptions struct {
-	value     *dynamodb.AttributeValue
-	ttl       time.Duration
-	renewLock chan struct{}
+	value                *dynamodb.AttributeValue
+	ttl                  time.Duration
+	renewLock            chan struct{}
+	tryLockPollingEnable bool
+	renewEnable          bool
 }
 
 // NewLockOptions create lock options, assign defaults then accept overrides
 func NewLockOptions(opts ...LockOption) *LockOptions {
 
 	lockOpts := &LockOptions{
-		ttl: DefaultLockTTL,
+		ttl:                  DefaultLockTTL,
+		renewEnable:          true, // defaults to true to retain existing default behaviour
+		tryLockPollingEnable: true, // defaults to true to retain existing default behaviour
 	}
 
 	for _, opt := range opts {
@@ -147,6 +151,20 @@ func LockWithTTL(ttl time.Duration) LockOption {
 func LockWithRenewLock(renewLockChan chan struct{}) LockOption {
 	return func(opts *LockOptions) {
 		opts.renewLock = renewLockChan
+	}
+}
+
+// LockWithNoRenew renewal of the lock in the background will not be enabled
+func LockWithNoRenew() LockOption {
+	return func(opts *LockOptions) {
+		opts.renewEnable = false
+	}
+}
+
+// LockWithNoTryPolling lock will not poll to acquire a lock and block the caller, if the lock fails it will return straight away
+func LockWithNoTryPolling() LockOption {
+	return func(opts *LockOptions) {
+		opts.tryLockPollingEnable = false
 	}
 }
 

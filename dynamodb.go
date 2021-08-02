@@ -366,13 +366,15 @@ func (ddb *Dynalock) NewLock(key string, options ...LockOption) (Locker, error) 
 	}
 
 	return &dynamodbLock{
-		ddb:      ddb,
-		last:     nil,
-		key:      key,
-		value:    value,
-		ttl:      ttl,
-		renewCh:  renewCh,
-		unlockCh: unlockCh,
+		ddb:                  ddb,
+		last:                 nil,
+		key:                  key,
+		value:                value,
+		ttl:                  ttl,
+		renewCh:              renewCh,
+		renewEnable:          lockOptions.renewEnable,
+		tryLockPollingEnable: lockOptions.tryLockPollingEnable,
+		unlockCh:             unlockCh,
 	}, nil
 }
 

@@ -27,6 +27,9 @@ var (
 
 	// ErrLockAcquireCancelled lock acquire was cancelled
 	ErrLockAcquireCancelled = errors.New("lock acquire was cancelled")
+
+	// ErrLockAcquireFailed lock acquire failed due with polling disabled
+	ErrLockAcquireFailed = errors.New("failed to acquire lock")
 )
 
 // Store represents the backend K/V storage
