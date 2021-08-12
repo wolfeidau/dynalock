@@ -21,8 +21,9 @@ The main problems I am trying to solve in with this package are:
 
 Some examples of uses for a library like this are:
 
-1. When using scheduled lambda functions this library will enable you to lock resources before performing actions with it, this could be a payment api or a ECS cluster, either way it is important to ensure only ONE service is performing that task at one time.
-2. When you start using step functions, how can you ensure only one workflow is active and performing some task, like provisioning, without having to worry about parallel executions.
+1. Locking a logical resource in your system while you make some updates, especially if this involves a few AWS resources, such as DynamoDB, S3 and SSM in one change.
+2. When using scheduled lambda functions this library will enable you to lock resources before performing actions with it, this could be a payment api or a ECS cluster, either way it is important to ensure only ONE service is performing that task at one time.
+3. When you start using step functions, how can you ensure only one workflow is active and performing some task, like provisioning, without having to worry about parallel executions.
 
 So the key here is storing state, and coordinating changes across workers, or resources.
 

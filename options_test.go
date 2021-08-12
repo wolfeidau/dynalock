@@ -29,3 +29,12 @@ func TestNewWriteOptionsWithPreviousKV(t *testing.T) {
 	assert.Equal(expected.previous, opts.previous)
 	assert.WithinDuration(time.Now().Add(expected.ttl), time.Now().Add(opts.ttl), 1*time.Second)
 }
+
+func TestLockOptions(t *testing.T) {
+	assert := require.New(t)
+
+	lockOptions := NewLockOptions(LockWithNoRenew(), LockWithNoTryPolling())
+
+	assert.False(lockOptions.renewEnable)
+	assert.False(lockOptions.tryLockPollingEnable)
+}

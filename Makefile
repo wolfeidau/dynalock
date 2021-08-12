@@ -20,7 +20,7 @@ bin/golangci-lint-${GOLANGCI_VERSION}:
 
 test: ##=> Run the tests
 	$(info [+] Run tests...")
-	@go test -v -cover ./...
+	@go test -v -race -cover ./...
 .PHONY: test
 
 lintv2: bin/golangci-lint ##=> Lint all the v2 things
